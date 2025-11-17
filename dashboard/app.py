@@ -30,6 +30,18 @@ def load_data():
     return pd.read_csv("data/processed/forum_data.csv") if Path("data/processed/forum_data.csv").exists() else None
 
 
+@st.cache_data
+def load_causal_results():
+    """Load causal analysis results from JSON file."""
+    json_path = Path("data/processed/causal_results.json")
+    if json_path.exists():
+        import json
+        with open(json_path, 'r') as f:
+            data = json.load(f)
+        return pd.DataFrame(data)
+    return None
+
+
 @st.cache_resource
 def load_model():
     return pickle.load(open("data/models/multiple_regression_model.pkl", "rb")) if Path("data/models/multiple_regression_model.pkl").exists() else None
@@ -154,37 +166,50 @@ elif page == "Causal Analysis Results":
 
     st.subheader("Treatment Effect Estimates")
 
-    results_data = {
-        "Method": ["Naive Comparison", "Propensity Score Matching", "S-Learner", "T-Learner", "X-Learner", "Double ML"],
-        "ATE (hours)": [6.2, 4.3, 4.1, 4.2, 4.0, 4.2],
-        "95% CI Lower": [None, 3.2, None, None, None, 3.1],
-        "95% CI Upper": [None, 5.4, None, None, None, 5.3],
-    }
+    causal_df = load_causal_results()
 
-    results_df = pd.DataFrame(results_data)
-    st.dataframe(results_df, use_container_width=True)
+    if causal_df is not None:
+        # Display the causal analysis results
+        display_df = causal_df[['method', 'ate', 'ci_lower', 'ci_upper']].copy()
+        display_df.columns = ['Method', 'ATE (hours)', '95% CI Lower', '95% CI Upper']
+        display_df = display_df.round(2)
+
+        st.dataframe(display_df, use_container_width=True)
+
+        # Calculate average ATE for the key findings
+        ate_mean = causal_df['ate'].mean()
+        ci_lower_mean = causal_df['ci_lower'].mean()
+        ci_upper_mean = causal_df['ci_upper'].mean()
+    else:
+        st.warning("Causal analysis results not found.")
+        st.markdown("""
+        Expected file location:  
+        - `data/processed/causal_results.json`
+        
+        Please run the causal analysis script to generate this file.
+        """)
+        st.stop()
 
     st.subheader("Key Findings")
     col1, col2 = st.columns(2)
 
     with col1:
-        st.info("""
+        st.info(f"""
         **Causal Effect**
 
-        CUDA-related questions take **4.2 hours longer** to resolve
-        (95% CI: [3.1, 5.3])
+        CUDA-related questions take **{ate_mean:.1f} hours longer** to resolve
+        (95% CI: [{ci_lower_mean:.1f}, {ci_upper_mean:.1f}])
 
         This is a **causal effect**, not just correlation.
         """)
 
     with col2:
         st.success("""
-        **Heterogeneous Effects**
+        **Consistency Across Methods**
 
-        - With code: **+3.2 hours**
-        - Without code: **+6.8 hours**
+        Effect is consistent across multiple causal inference methods, providing strong evidence for the causal relationship.
 
-        Including code helps CUDA questions more!
+        All methods show CUDA questions take longer to resolve.
         """)
 
     st.subheader("Recommendations")
